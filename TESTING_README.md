@@ -60,6 +60,30 @@ php test_samples.php
 - 🔍 Tests all IP lookup formats
 - ⚠️ Error handling verification
 
+### 6. **`test_high_volume_lookups.php`** - High-Volume CLI Testing
+**Purpose**: Stress test with thousands of IPs and comprehensive performance analysis
+**Usage**: 
+```bash
+php test_high_volume_lookups.php
+```
+**Features**:
+- 🚀 Tests 5000+ individual IP lookups
+- 📦 Tests 2000+ bulk IP processing
+- 🎭 Tests 1000+ mixed format entries
+- ⚡ Comprehensive performance metrics
+- 🏆 Detailed performance scoring
+- 💾 Memory usage analysis
+
+### 7. **`test_high_volume_web.php`** - High-Volume Web Testing
+**Purpose**: Browser-based high-volume testing with visual progress
+**Access**: `http://your-domain/test_high_volume_web.php`
+**Features**:
+- 🖥️ Visual progress indicators
+- 📊 Real-time performance metrics
+- 🔄 Live result updates
+- 📈 Performance assessment graphs
+- 🧹 Automatic cleanup
+
 ## 🚀 Quick Start Testing Guide
 
 ### Step 1: Basic Functionality Test
@@ -94,6 +118,22 @@ php benchmark_performance.php
 php test_samples.php
 ```
 **Expected Result**: All sample inputs should work as documented
+
+### Step 6: High-Volume Performance Testing
+```bash
+# Run comprehensive high-volume test
+php test_high_volume_lookups.php
+```
+**Expected Result**: 
+- 90%+ success rate on all lookups
+- 1000+ lookups per second performance
+- Overall performance score 75%+
+
+### Step 7: Web-Based High-Volume Testing
+1. Open `http://your-domain/test_high_volume_web.php`
+2. Click "Start High-Volume Test"
+3. Monitor real-time progress and results
+4. Verify performance metrics meet targets
 
 ## 📋 Test Categories Explained
 

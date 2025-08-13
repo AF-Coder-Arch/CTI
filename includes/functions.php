@@ -149,9 +149,21 @@ function deleteUser($pdo, $id) {
  * @return bool            True on success, false on failure
  */
 function addIpRange($pdo, $startIp, $endIp, $teamName) {
+    // Validate IP addresses
+    if (!filter_var($startIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || 
+        !filter_var($endIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return false; // Invalid IP format
+    }
+    
     // Convert dotted IPs to unsigned integer representation for easy comparisons
     $startIpLong = sprintf('%u', ip2long($startIp));
     $endIpLong = sprintf('%u', ip2long($endIp));
+    
+    // Validate that start IP is not greater than end IP
+    if ($startIpLong > $endIpLong) {
+        return false; // Invalid range order
+    }
+    
     $stmt = $pdo->prepare("INSERT INTO ip_ranges (start_ip, end_ip, team, start_ip_long, end_ip_long) VALUES (:start_ip, :end_ip, :team, :start_ip_long, :end_ip_long)");
     return $stmt->execute([
         ':start_ip' => $startIp,

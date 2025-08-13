@@ -282,6 +282,261 @@ function testUpdateIpRange() {
     }
 }
 
+// Test 5: Setup High-Volume Test Data
+function testSetupHighVolumeData() {
+    global $pdo, $TEST_PREFIX;
+    
+    $teams = [
+        'Network Operations', 'Security Team', 'Development Team', 'QA Engineering',
+        'Infrastructure', 'DevOps', 'Database Team', 'Frontend Team', 'Backend Team',
+        'Mobile Team', 'Analytics Team', 'Customer Support', 'Sales Engineering',
+        'Marketing Tech', 'Cloud Operations', 'Monitoring Team', 'Release Team'
+    ];
+    
+    $totalAdded = 0;
+    $startTime = microtime(true);
+    
+    try {
+        // Add 50 /24 CIDR blocks across different teams
+        for ($i = 1; $i <= 50; $i++) {
+            $cidr = "10.{$i}.0.0/24";
+            $team = $TEST_PREFIX . $teams[($i - 1) % count($teams)];
+            if (addIpRangeFromCidr($pdo, $cidr, $team)) {
+                $totalAdded++;
+            }
+        }
+        
+        // Add 30 traditional ranges in 192.168.x.x
+        for ($i = 1; $i <= 30; $i++) {
+            $startIp = "192.168.{$i}.1";
+            $endIp = "192.168.{$i}.100";
+            $team = $TEST_PREFIX . $teams[($i - 1) % count($teams)];
+            if (addIpRange($pdo, $startIp, $endIp, $team)) {
+                $totalAdded++;
+            }
+        }
+        
+        // Add 20 smaller ranges in 172.16.x.x
+        for ($i = 1; $i <= 20; $i++) {
+            $startIp = "172.16.{$i}.10";
+            $endIp = "172.16.{$i}.50";
+            $team = $TEST_PREFIX . $teams[($i - 1) % count($teams)];
+            if (addIpRange($pdo, $startIp, $endIp, $team)) {
+                $totalAdded++;
+            }
+        }
+        
+        // Add individual server IPs
+        $serverIps = [];
+        for ($i = 1; $i <= 100; $i++) {
+            $serverIps[] = "203.0.113.{$i}";
+        }
+        $result = addIpListToTeam($pdo, implode(' ', $serverIps), $TEST_PREFIX . 'Server Farm');
+        if ($result['success']) {
+            $totalAdded += $result['added'];
+        }
+        
+        $endTime = microtime(true);
+        $duration = round($endTime - $startTime, 3);
+        
+        if ($totalAdded >= 100) {
+            return [
+                'success' => true, 
+                'details' => "Setup {$totalAdded} IP ranges across " . count($teams) . " teams in {$duration}s"
+            ];
+        } else {
+            return ['success' => false, 'error' => "Only added {$totalAdded} entries, expected at least 100"];
+        }
+        
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => 'Exception during setup: ' . $e->getMessage()];
+    }
+}
+
+// Test 6: High-Volume IP Lookup (1000 IPs)
+function testHighVolumeIpLookup() {
+    global $pdo;
+    
+    $startTime = microtime(true);
+    $testIps = [];
+    $foundCount = 0;
+    $totalTests = 1000;
+    
+    // Generate 1000 test IPs across our known ranges
+    for ($i = 1; $i <= $totalTests; $i++) {
+        if ($i <= 250) {
+            // Test IPs in 10.x.0.x range (CIDR blocks)
+            $subnet = (($i - 1) % 50) + 1;
+            $host = (($i - 1) % 254) + 1;
+            $testIps[] = "10.{$subnet}.0.{$host}";
+        } elseif ($i <= 500) {
+            // Test IPs in 192.168.x.x range (traditional ranges)
+            $subnet = (($i - 251) % 30) + 1;
+            $host = (($i - 251) % 100) + 1;
+            $testIps[] = "192.168.{$subnet}.{$host}";
+        } elseif ($i <= 750) {
+            // Test IPs in 172.16.x.x range
+            $subnet = (($i - 501) % 20) + 1;
+            $host = (($i - 501) % 41) + 10; // 10-50 range
+            $testIps[] = "172.16.{$subnet}.{$host}";
+        } else {
+            // Test server IPs in 203.0.113.x range
+            $host = (($i - 751) % 100) + 1;
+            $testIps[] = "203.0.113.{$host}";
+        }
+    }
+    
+    // Perform individual lookups
+    foreach ($testIps as $ip) {
+        $team = getTeamByIp($pdo, $ip);
+        if ($team !== null) {
+            $foundCount++;
+        }
+    }
+    
+    $endTime = microtime(true);
+    $duration = round($endTime - $startTime, 3);
+    $lookupsPerSecond = round($totalTests / $duration, 1);
+    
+    // We expect a high success rate since we're testing IPs in our known ranges
+    $successRate = round(($foundCount / $totalTests) * 100, 1);
+    
+    if ($foundCount >= 800 && $duration < 10) { // 80%+ success rate, under 10 seconds
+        return [
+            'success' => true,
+            'details' => "Looked up {$totalTests} IPs in {$duration}s ({$lookupsPerSecond}/sec). Found teams for {$foundCount} IPs ({$successRate}%)"
+        ];
+    } else {
+        return [
+            'success' => false,
+            'error' => "Performance/accuracy issue: {$foundCount}/{$totalTests} found in {$duration}s ({$successRate}% success)"
+        ];
+    }
+}
+
+// Test 7: Bulk Team Resolution (500 IPs)
+function testBulkTeamResolution() {
+    global $pdo;
+    
+    $startTime = microtime(true);
+    $testIpsList = [];
+    
+    // Create bulk IP lists for testing
+    for ($batch = 1; $batch <= 10; $batch++) {
+        $batchIps = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $subnet = (($batch - 1) % 50) + 1;
+            $host = $i;
+            $batchIps[] = "10.{$subnet}.0.{$host}";
+        }
+        $testIpsList[] = implode(' ', $batchIps);
+    }
+    
+    $totalProcessed = 0;
+    $totalFound = 0;
+    
+    foreach ($testIpsList as $ipList) {
+        $results = getTeamsByIpInput($pdo, $ipList);
+        $totalProcessed += count($results);
+        
+        foreach ($results as $result) {
+            if ($result['team'] !== null) {
+                $totalFound++;
+            }
+        }
+    }
+    
+    $endTime = microtime(true);
+    $duration = round($endTime - $startTime, 3);
+    $successRate = round(($totalFound / $totalProcessed) * 100, 1);
+    
+    if ($totalProcessed === 500 && $totalFound >= 400 && $duration < 5) {
+        return [
+            'success' => true,
+            'details' => "Bulk resolved {$totalProcessed} IPs in {$duration}s. Found teams for {$totalFound} IPs ({$successRate}%)"
+        ];
+    } else {
+        return [
+            'success' => false,
+            'error' => "Bulk resolution issue: {$totalFound}/{$totalProcessed} resolved in {$duration}s"
+        ];
+    }
+}
+
+// Test 8: Mixed Format Lookup (250 entries)
+function testMixedFormatLookup() {
+    global $pdo;
+    
+    $startTime = microtime(true);
+    $testEntries = [];
+    
+    // Build mixed format test string with 250 total items
+    $mixedInput = [];
+    
+    // 100 individual IPs
+    for ($i = 1; $i <= 100; $i++) {
+        $subnet = (($i - 1) % 50) + 1;
+        $host = (($i - 1) % 254) + 1;
+        $mixedInput[] = "10.{$subnet}.0.{$host}";
+    }
+    
+    // 50 IP ranges
+    for ($i = 1; $i <= 50; $i++) {
+        $subnet = (($i - 1) % 30) + 1;
+        $start = ($i % 10) + 1;
+        $end = $start + 5;
+        $mixedInput[] = "192.168.{$subnet}.{$start}-192.168.{$subnet}.{$end}";
+    }
+    
+    // 50 CIDR blocks
+    for ($i = 1; $i <= 50; $i++) {
+        $subnet = (($i - 1) % 20) + 1;
+        $mixedInput[] = "172.16.{$subnet}.0/28";
+    }
+    
+    // 50 more individual IPs
+    for ($i = 1; $i <= 50; $i++) {
+        $host = $i;
+        $mixedInput[] = "203.0.113.{$host}";
+    }
+    
+    // Combine all entries into one string
+    $testInput = implode(' ', $mixedInput);
+    
+    $results = getTeamsByIpInput($pdo, $testInput);
+    
+    $endTime = microtime(true);
+    $duration = round($endTime - $startTime, 3);
+    
+    // Count results by type
+    $typeCounts = ['single' => 0, 'range' => 0, 'cidr' => 0, 'invalid' => 0];
+    $teamsFound = 0;
+    
+    foreach ($results as $result) {
+        $typeCounts[$result['type']]++;
+        if (isset($result['team']) && $result['team'] !== null) {
+            $teamsFound++;
+        }
+        if (isset($result['overlapping_teams']) && !empty($result['overlapping_teams'])) {
+            $teamsFound++;
+        }
+    }
+    
+    $totalEntries = count($results);
+    
+    if ($totalEntries >= 200 && $teamsFound >= 100 && $duration < 3) {
+        return [
+            'success' => true,
+            'details' => "Processed {$totalEntries} mixed entries in {$duration}s. Types: Single({$typeCounts['single']}), Range({$typeCounts['range']}), CIDR({$typeCounts['cidr']}), Invalid({$typeCounts['invalid']}). Teams found: {$teamsFound}"
+        ];
+    } else {
+        return [
+            'success' => false,
+            'error' => "Mixed format processing issue: {$totalEntries} entries, {$teamsFound} teams found in {$duration}s"
+        ];
+    }
+}
+
 // Test 10: Error Handling
 function testErrorHandling() {
     global $pdo, $TEST_PREFIX;
@@ -341,6 +596,10 @@ runTest("Add IP Range (Traditional)", 'testAddIpRange', $tests, $passed, $failed
 runTest("Add CIDR Range", 'testAddCidrRange', $tests, $passed, $failed);
 runTest("Add IP List (Individual IPs)", 'testAddIpList', $tests, $passed, $failed);
 runTest("Add IP List with Ranges", 'testAddIpListWithRanges', $tests, $passed, $failed);
+runTest("Setup High-Volume Test Data", 'testSetupHighVolumeData', $tests, $passed, $failed);
+runTest("High-Volume IP Lookup (1000 IPs)", 'testHighVolumeIpLookup', $tests, $passed, $failed);
+runTest("Bulk Team Resolution (500 IPs)", 'testBulkTeamResolution', $tests, $passed, $failed);
+runTest("Mixed Format Lookup (250 entries)", 'testMixedFormatLookup', $tests, $passed, $failed);
 runTest("Single IP Lookup", 'testSingleIpLookup', $tests, $passed, $failed);
 runTest("Multiple IP Lookup", 'testMultipleIpLookup', $tests, $passed, $failed);
 runTest("CIDR Lookup", 'testCidrLookup', $tests, $passed, $failed);
