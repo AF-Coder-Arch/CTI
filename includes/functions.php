@@ -186,6 +186,45 @@ function deleteIpRange($pdo, $id) {
 }
 
 /**
+ * Update an existing IP range.
+ *
+ * @param PDO $pdo Database connection
+ * @param int $id IP range ID to update
+ * @param string $startIp New start IP address
+ * @param string $endIp New end IP address
+ * @param string $teamName New team name
+ * @return bool True on success, false on failure
+ */
+function updateIpRange($pdo, $id, $startIp, $endIp, $teamName) {
+    $startLong = sprintf('%u', ip2long($startIp));
+    $endLong = sprintf('%u', ip2long($endIp));
+    
+    $stmt = $pdo->prepare("UPDATE ip_ranges SET start_ip = :start_ip, end_ip = :end_ip, team = :team, start_ip_long = :start_ip_long, end_ip_long = :end_ip_long WHERE id = :id");
+    
+    return $stmt->execute([
+        ':id' => $id,
+        ':start_ip' => $startIp,
+        ':end_ip' => $endIp,
+        ':team' => $teamName,
+        ':start_ip_long' => $startLong,
+        ':end_ip_long' => $endLong
+    ]);
+}
+
+/**
+ * Get a single IP range by ID.
+ *
+ * @param PDO $pdo Database connection
+ * @param int $id IP range ID
+ * @return array|false IP range data or false if not found
+ */
+function getIpRangeById($pdo, $id) {
+    $stmt = $pdo->prepare("SELECT * FROM ip_ranges WHERE id = :id");
+    $stmt->execute([':id' => $id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+/**
  * Resolve an IP address to a team name if a mapping exists.
  *
  * Converts the dotted IP string into an unsigned integer and performs a
@@ -388,11 +427,41 @@ function addIpRangeFromCidr($pdo, $cidr, $teamName) {
 }
 
 /**
+ * Expand an IP range into individual IP addresses.
+ *
+ * @param string $startIp Starting IP address
+ * @param string $endIp Ending IP address
+ * @param int $maxIps Maximum number of IPs to expand (safety limit)
+ * @return array Array of individual IP addresses, or empty array if range is too large
+ */
+function expandIpRange($startIp, $endIp, $maxIps = 1000) {
+    $startLong = sprintf('%u', ip2long($startIp));
+    $endLong = sprintf('%u', ip2long($endIp));
+    
+    if ($startLong > $endLong) {
+        return []; // Invalid range
+    }
+    
+    $count = $endLong - $startLong + 1;
+    if ($count > $maxIps) {
+        return []; // Range too large for individual IP expansion
+    }
+    
+    $ips = [];
+    for ($i = $startLong; $i <= $endLong; $i++) {
+        $ips[] = long2ip($i);
+    }
+    
+    return $ips;
+}
+
+/**
  * Add multiple individual IPs from a list and map them all to the same team.
+ * Supports individual IPs and IP ranges (which get expanded to individual IPs).
  * Each IP becomes its own range entry (start_ip = end_ip).
  *
  * @param PDO $pdo Database connection
- * @param string $ipList Space/comma/newline separated list of IPs
+ * @param string $ipList Space/comma/newline separated list of IPs and ranges
  * @param string $teamName Name of the team
  * @return array Result with success status, count of added IPs, and any errors
  */
@@ -402,16 +471,27 @@ function addIpListToTeam($pdo, $ipList, $teamName) {
     $errors = [];
     $validIps = [];
     
-    // First, collect all valid individual IPs
+    // Process each entry and collect individual IPs
     foreach ($entries as $entry) {
         if ($entry['type'] === 'invalid') {
             $errors[] = "Invalid: " . $entry['original'] . " - " . $entry['error'];
         } elseif ($entry['type'] === 'single') {
             $validIps[] = $entry['start_ip'];
+        } elseif ($entry['type'] === 'range') {
+            // Expand IP range into individual IPs
+            $expandedIps = expandIpRange($entry['start_ip'], $entry['end_ip']);
+            if (empty($expandedIps)) {
+                $errors[] = "Skipped: " . $entry['original'] . " - Range too large (max 1000 IPs) or invalid";
+            } else {
+                $validIps = array_merge($validIps, $expandedIps);
+            }
         } else {
-            $errors[] = "Skipped: " . $entry['original'] . " - Only individual IPs allowed in list mode, not ranges or CIDR blocks";
+            $errors[] = "Skipped: " . $entry['original'] . " - CIDR blocks not supported in list mode, use individual IPs or IP ranges";
         }
     }
+    
+    // Remove duplicates
+    $validIps = array_unique($validIps);
     
     if (empty($validIps)) {
         return [

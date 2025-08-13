@@ -155,6 +155,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    // Update IP range form
+    elseif (isset($_POST['update_ip_range'])) {
+        $rangeId = isset($_POST['range_id']) ? (int)$_POST['range_id'] : 0;
+        $startIp = isset($_POST['edit_start_ip']) ? trim($_POST['edit_start_ip']) : '';
+        $endIp = isset($_POST['edit_end_ip']) ? trim($_POST['edit_end_ip']) : '';
+        $teamName = isset($_POST['edit_team_name']) ? trim($_POST['edit_team_name']) : '';
+
+        if ($rangeId <= 0) {
+            $message = 'Invalid IP range ID.';
+            $messageType = 'danger';
+        } elseif ($startIp === '' || $endIp === '' || $teamName === '') {
+            $message = 'Please fill in all fields for the IP range update.';
+            $messageType = 'danger';
+        } elseif (!filter_var($startIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || 
+                 !filter_var($endIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $message = 'Please enter valid IPv4 addresses.';
+            $messageType = 'danger';
+        } else {
+            // Convert to long to compare start and end order
+            $startLong = sprintf('%u', ip2long($startIp));
+            $endLong = sprintf('%u', ip2long($endIp));
+            if ($startLong > $endLong) {
+                $message = 'Start IP must be less than or equal to End IP.';
+                $messageType = 'danger';
+            } else {
+                if (updateIpRange($pdo, $rangeId, $startIp, $endIp, $teamName)) {
+                    $message = 'IP range updated successfully.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Error updating IP range.';
+                    $messageType = 'danger';
+                }
+            }
+        }
+    }
 }
 
 // Fetch current users and IP ranges
@@ -297,11 +332,14 @@ include 'includes/header.php';
                     <div id="list_fields" style="display: none;">
                         <div class="mb-3">
                             <label for="ip_list" class="form-label">IP Address List</label>
-                            <textarea class="form-control" id="ip_list" name="ip_list" rows="4" 
-                                      placeholder="Enter individual IPs (space, comma, or line separated):&#10;10.12.2.2 10.90.10.100 10.23.211.10&#10;192.168.1.1, 172.16.0.50&#10;10.0.0.1"></textarea>
+                            <textarea class="form-control" id="ip_list" name="ip_list" rows="5" 
+                                      placeholder="Enter individual IPs and ranges (space, comma, or line separated):&#10;10.12.2.2 10.90.10.100 10.23.211.10&#10;192.168.1.1, 172.16.0.50&#10;10.10.10.10-10.10.10.20&#10;10.0.0.1 10.5.5.1-10.5.5.5"></textarea>
                             <div class="form-text">
-                                <strong>Examples:</strong> <code>10.12.2.2 10.90.10.100 10.23.211.10</code><br>
-                                <small class="text-warning"><i class="fas fa-info-circle"></i> Only individual IPs allowed - no ranges or CIDR blocks in list mode</small>
+                                <strong>Supported formats:</strong><br>
+                                • Individual IPs: <code>10.12.2.2 10.90.10.100</code><br>
+                                • IP ranges: <code>10.10.10.10-10.10.10.20</code> (expands to individual IPs)<br>
+                                • Mixed: <code>192.168.1.1, 10.5.5.1-10.5.5.5, 172.16.0.1</code><br>
+                                <small class="text-info"><i class="fas fa-info-circle"></i> Ranges are expanded into individual IPs (max 1000 per range)</small>
                             </div>
                         </div>
                     </div>
@@ -356,6 +394,78 @@ include 'includes/header.php';
                     document.getElementById('list_mode').addEventListener('change', function() {
                         if (this.checked) showInputMode('list');
                     });
+                    
+                    // Inline editing functionality for IP ranges
+                    document.addEventListener('DOMContentLoaded', function() {
+                        // Edit button click handler
+                        document.querySelectorAll('.edit-btn').forEach(button => {
+                            button.addEventListener('click', function() {
+                                const rangeId = this.dataset.rangeId;
+                                toggleEditMode(rangeId, true);
+                            });
+                        });
+                        
+                        // Cancel button click handler
+                        document.querySelectorAll('.cancel-btn').forEach(button => {
+                            button.addEventListener('click', function() {
+                                const rangeId = this.dataset.rangeId;
+                                toggleEditMode(rangeId, false);
+                            });
+                        });
+                        
+                        // Form submit handler with validation
+                        document.querySelectorAll('.edit-form').forEach(form => {
+                            form.addEventListener('submit', function(e) {
+                                const startIp = form.querySelector('[name="edit_start_ip"]').value.trim();
+                                const endIp = form.querySelector('[name="edit_end_ip"]').value.trim();
+                                const teamName = form.querySelector('[name="edit_team_name"]').value.trim();
+                                
+                                if (!startIp || !endIp || !teamName) {
+                                    e.preventDefault();
+                                    alert('Please fill in all fields.');
+                                    return false;
+                                }
+                                
+                                // Basic IP validation
+                                const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+                                if (!ipRegex.test(startIp) || !ipRegex.test(endIp)) {
+                                    e.preventDefault();
+                                    alert('Please enter valid IP addresses.');
+                                    return false;
+                                }
+                                
+                                return true;
+                            });
+                        });
+                    });
+                    
+                    function toggleEditMode(rangeId, editMode) {
+                        const row = document.getElementById('row_' + rangeId);
+                        const displayElements = row.querySelectorAll('.display-mode');
+                        const editElements = row.querySelectorAll('.edit-mode');
+                        
+                        if (editMode) {
+                            // Switch to edit mode
+                            displayElements.forEach(el => el.style.display = 'none');
+                            editElements.forEach(el => el.style.display = 'block');
+                            
+                            // Focus on the first input field
+                            const firstInput = row.querySelector('[name="edit_start_ip"]');
+                            if (firstInput) {
+                                setTimeout(() => firstInput.focus(), 100);
+                            }
+                        } else {
+                            // Switch back to display mode
+                            editElements.forEach(el => el.style.display = 'none');
+                            displayElements.forEach(el => el.style.display = 'block');
+                            
+                            // Reset form values to original
+                            const form = row.querySelector('.edit-form');
+                            if (form) {
+                                form.reset();
+                            }
+                        }
+                    }
                 </script>
 
                 <h6 class="mt-4">Existing IP Ranges</h6>
@@ -398,15 +508,16 @@ include 'includes/header.php';
                                         }
                                     }
                                     ?>
-                                    <tr>
-                                        <td>
+                                    <tr id="row_<?php echo $range['id']; ?>">
+                                        <!-- Display Mode -->
+                                        <td class="display-mode">
                                             <div>
                                                 <?php if ($range['start_ip'] === $range['end_ip']): ?>
                                                     <i class="fas fa-dot-circle text-primary"></i>
-                                                    <?php echo htmlspecialchars($range['start_ip']); ?>
+                                                    <span class="ip-display"><?php echo htmlspecialchars($range['start_ip']); ?></span>
                                                 <?php else: ?>
                                                     <i class="fas fa-arrows-alt-h text-info"></i>
-                                                    <?php echo htmlspecialchars($range['start_ip']); ?> - <?php echo htmlspecialchars($range['end_ip']); ?>
+                                                    <span class="ip-display"><?php echo htmlspecialchars($range['start_ip']); ?> - <?php echo htmlspecialchars($range['end_ip']); ?></span>
                                                 <?php endif; ?>
                                             </div>
                                             <?php if ($cidrEquivalent): ?>
@@ -415,23 +526,79 @@ include 'includes/header.php';
                                                 </small>
                                             <?php endif; ?>
                                         </td>
-                                        <td>
-                                            <span class="badge bg-secondary">
-                                                <?php echo htmlspecialchars($range['team']); ?>
-                                            </span>
+                                        
+                                        <!-- Edit Mode (hidden by default) -->
+                                        <td class="edit-mode" style="display: none;">
+                                            <form method="POST" class="edit-form" id="edit_form_<?php echo $range['id']; ?>" data-range-id="<?php echo $range['id']; ?>">
+                                                <input type="hidden" name="update_ip_range" value="1">
+                                                <input type="hidden" name="range_id" value="<?php echo $range['id']; ?>">
+                                                <div class="row g-1">
+                                                    <div class="col-5">
+                                                        <input type="text" name="edit_start_ip" class="form-control form-control-sm" 
+                                                               value="<?php echo htmlspecialchars($range['start_ip']); ?>" 
+                                                               placeholder="Start IP" required>
+                                                    </div>
+                                                    <div class="col-2 text-center align-self-center">
+                                                        <small class="text-muted">to</small>
+                                                    </div>
+                                                    <div class="col-5">
+                                                        <input type="text" name="edit_end_ip" class="form-control form-control-sm" 
+                                                               value="<?php echo htmlspecialchars($range['end_ip']); ?>" 
+                                                               placeholder="End IP" required>
+                                                    </div>
+                                                </div>
+                                            </form>
                                         </td>
+                                        
                                         <td>
-                                            <small class="text-muted">
-                                                <?php echo number_format($ipCount); ?> IP<?php echo $ipCount !== 1 ? 's' : ''; ?>
-                                            </small>
+                                            <div class="display-mode">
+                                                <span class="badge bg-secondary">
+                                                    <?php echo htmlspecialchars($range['team']); ?>
+                                                </span>
+                                            </div>
+                                            <div class="edit-mode" style="display: none;">
+                                                <input type="text" name="edit_team_name" class="form-control form-control-sm" 
+                                                       value="<?php echo htmlspecialchars($range['team']); ?>" 
+                                                       placeholder="Team Name" required form="edit_form_<?php echo $range['id']; ?>">
+                                            </div>
                                         </td>
+                                        
                                         <td>
-                                            <a href="admin.php?delete_ip_id=<?php echo $range['id']; ?>" 
-                                               class="btn btn-sm btn-outline-danger" 
-                                               onclick="return confirm('Delete IP range for <?php echo htmlspecialchars($range['team']); ?>?\n<?php echo htmlspecialchars($range['start_ip']); ?> - <?php echo htmlspecialchars($range['end_ip']); ?>');"
-                                               title="Delete this IP range">
-                                                <i class="fas fa-trash"></i>
-                                            </a>
+                                            <div class="display-mode">
+                                                <small class="text-muted">
+                                                    <?php echo number_format($ipCount); ?> IP<?php echo $ipCount !== 1 ? 's' : ''; ?>
+                                                </small>
+                                            </div>
+                                            <div class="edit-mode" style="display: none;">
+                                                <small class="text-muted">Editing...</small>
+                                            </div>
+                                        </td>
+                                        
+                                        <td>
+                                            <div class="display-mode">
+                                                <button class="btn btn-sm btn-outline-primary me-1 edit-btn" 
+                                                        data-range-id="<?php echo $range['id']; ?>" 
+                                                        title="Edit this IP range">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <a href="admin.php?delete_ip_id=<?php echo $range['id']; ?>" 
+                                                   class="btn btn-sm btn-outline-danger" 
+                                                   onclick="return confirm('Delete IP range for <?php echo htmlspecialchars($range['team']); ?>?\n<?php echo htmlspecialchars($range['start_ip']); ?> - <?php echo htmlspecialchars($range['end_ip']); ?>');"
+                                                   title="Delete this IP range">
+                                                    <i class="fas fa-trash"></i>
+                                                </a>
+                                            </div>
+                                            <div class="edit-mode" style="display: none;">
+                                                <button type="submit" class="btn btn-sm btn-success me-1 save-btn" 
+                                                        title="Save changes" form="edit_form_<?php echo $range['id']; ?>">
+                                                    <i class="fas fa-check"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-secondary cancel-btn" 
+                                                        data-range-id="<?php echo $range['id']; ?>" 
+                                                        title="Cancel editing">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
