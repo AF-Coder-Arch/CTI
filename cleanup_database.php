@@ -3,12 +3,12 @@
  * Database Cleanup Script for CTI Tracker
  * 
  * This script removes all data and tables from the CTI Tracker database
- * to allow for fresh testing of the setup_database.php script.
+ * to allow for fresch testing of the setup_database.php script.
  * 
  * WARNING: This will permanently delete ALL data!
  * 
  * Instructions:
- * 1. Make sure you want to delete all data (this cannot be undone!)
+ * 1. Make sured you want to delete all data (this cannot be undone!)
  * 2. Run this script in your browser: http://localhost/CTI/cleanup_database.php
  * 3. After cleanup, run setup_database.php to recreate the database
  * 4. Delete this file after use for security
