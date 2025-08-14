@@ -146,9 +146,16 @@ include 'includes/header.php';
                                         </span>
                                     <?php elseif ($result['type'] === 'single'): ?>
                                         <?php if ($result['found']): ?>
-                                            <span class="badge bg-success">
-                                                <i class="fas fa-check"></i> <?php echo htmlspecialchars($result['team']); ?>
-                                            </span>
+                                            <?php foreach ($result['teams'] as $team): ?>
+                                                <span class="badge bg-success me-1">
+                                                    <i class="fas fa-check"></i> <?php echo htmlspecialchars($team); ?>
+                                                </span>
+                                            <?php endforeach; ?>
+                                            <?php if (count($result['teams']) > 1): ?>
+                                                <br><small class="text-muted">
+                                                    Found <?php echo count($result['teams']); ?> overlapping team(s)
+                                                </small>
+                                            <?php endif; ?>
                                         <?php else: ?>
                                             <span class="badge bg-warning">
                                                 <i class="fas fa-question-circle"></i> No team mapping found

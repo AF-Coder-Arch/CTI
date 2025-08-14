@@ -258,6 +258,22 @@ function getTeamByIp($pdo, $ipAddress) {
 }
 
 /**
+ * Get ALL teams by IP address (for IPs that belong to multiple teams).
+ *
+ * @param PDO    $pdo       Database connection
+ * @param string $ipAddress IPv4 or IPv6 address
+ * @return array            Array of team names
+ */
+function getAllTeamsByIp($pdo, $ipAddress) {
+    // Only IPv4 addresses are supported for integer comparison; other
+    // addresses will not match any entry.
+    $ipLong = sprintf('%u', ip2long($ipAddress));
+    $stmt = $pdo->prepare("SELECT DISTINCT team FROM ip_ranges WHERE start_ip_long <= :ip AND end_ip_long >= :ip ORDER BY team");
+    $stmt->execute([':ip' => $ipLong]);
+    return $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/**
  * Parse CIDR notation into start and end IP addresses.
  *
  * @param string $cidr CIDR notation (e.g., "192.168.1.0/24")
@@ -390,12 +406,12 @@ function getTeamsByIpInput($pdo, $input) {
             continue;
         }
         
-        // For single IPs, just do a direct lookup
+        // For single IPs, get ALL teams that contain this IP
         if ($entry['type'] === 'single') {
-            $team = getTeamByIp($pdo, $entry['start_ip']);
+            $teams = getAllTeamsByIp($pdo, $entry['start_ip']);
             $results[] = array_merge($entry, [
-                'team' => $team,
-                'found' => $team !== null
+                'teams' => $teams,
+                'found' => !empty($teams)
             ]);
         } else {
             // For ranges and CIDR, we need to check if any part of the range matches existing mappings
