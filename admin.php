@@ -83,75 +83,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // Add new IP range form
     elseif (isset($_POST['add_ip_range'])) {
-        $inputMode = isset($_POST['input_mode']) ? $_POST['input_mode'] : 'range';
         $teamName = isset($_POST['team_name']) ? trim($_POST['team_name']) : '';
+        $ipInput = isset($_POST['ip_input']) ? trim($_POST['ip_input']) : '';
 
         if ($teamName === '') {
             $message = 'Please enter a team name.';
             $messageType = 'danger';
-        } elseif ($inputMode === 'cidr') {
-            // CIDR mode
-            $cidr = isset($_POST['cidr']) ? trim($_POST['cidr']) : '';
-            if ($cidr === '') {
-                $message = 'Please enter a CIDR notation.';
-                $messageType = 'danger';
-            } else {
-                if (addIpRangeFromCidr($pdo, $cidr, $teamName)) {
-                    $message = 'IP range from CIDR added successfully.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Invalid CIDR notation or error adding IP range.';
-                    $messageType = 'danger';
-                }
-            }
-        } elseif ($inputMode === 'list') {
-            // IP List mode
-            $ipList = isset($_POST['ip_list']) ? trim($_POST['ip_list']) : '';
-            if ($ipList === '') {
-                $message = 'Please enter a list of IP addresses.';
-                $messageType = 'danger';
-            } else {
-                $result = addIpListToTeam($pdo, $ipList, $teamName);
-                if ($result['success']) {
-                    $message = "Successfully added {$result['added']} IP(s) to team '{$teamName}'.";
-                    if (!empty($result['errors'])) {
-                        $message .= " Warnings: " . implode('; ', $result['errors']);
-                    }
-                    $messageType = 'success';
-                } else {
-                    $message = 'Failed to add IPs. Errors: ' . implode('; ', $result['errors']);
-                    $messageType = 'danger';
-                }
-            }
+        } elseif ($ipInput === '') {
+            $message = 'Please enter IP addresses, ranges, or CIDR blocks.';
+            $messageType = 'danger';
         } else {
-            // Range mode (existing functionality)
-            $startIp = isset($_POST['start_ip']) ? trim($_POST['start_ip']) : '';
-            $endIp = isset($_POST['end_ip']) ? trim($_POST['end_ip']) : '';
-
-            // Validate inputs
-            if ($startIp === '' || $endIp === '') {
-                $message = 'Please fill in start IP and end IP for the IP range.';
-                $messageType = 'danger';
-            } elseif (!filter_var($startIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || 
-                     !filter_var($endIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                $message = 'Please enter valid IPv4 addresses.';
-                $messageType = 'danger';
-            } else {
-                // Convert to long to compare start and end order
-                $startLong = sprintf('%u', ip2long($startIp));
-                $endLong = sprintf('%u', ip2long($endIp));
-                if ($startLong > $endLong) {
-                    $message = 'Start IP must be less than or equal to End IP.';
-                    $messageType = 'danger';
-                } else {
-                    if (addIpRange($pdo, $startIp, $endIp, $teamName)) {
-                        $message = 'IP range added successfully.';
-                        $messageType = 'success';
-                    } else {
-                        $message = 'Error adding IP range.';
-                        $messageType = 'danger';
-                    }
+            $result = addIpListToTeam($pdo, $ipInput, $teamName);
+            if ($result['success']) {
+                $message = "Successfully added {$result['added']} IP entry/entries to team '{$teamName}'.";
+                if (!empty($result['errors'])) {
+                    $message .= " Warnings: " . implode('; ', $result['errors']);
                 }
+                $messageType = 'success';
+            } else {
+                $message = 'Failed to add IPs. Errors: ' . implode('; ', $result['errors']);
+                $messageType = 'danger';
             }
         }
     }
@@ -281,120 +232,32 @@ include 'includes/header.php';
                 <h5 class="mb-0"><i class="fas fa-network-wired"></i> IP Range Management</h5>
             </div>
             <div class="card-body">
-                <form method="POST" class="mb-3" id="ipRangeForm">
+                <form method="POST" class="mb-3">
                     <input type="hidden" name="add_ip_range" value="1">
                     
-                    <!-- Input Mode Toggle -->
                     <div class="mb-3">
-                        <label class="form-label">Input Method</label>
-                        <div class="btn-group w-100" role="group" aria-label="Input mode">
-                            <input type="radio" class="btn-check" name="input_mode" id="range_mode" value="range" checked>
-                            <label class="btn btn-outline-secondary" for="range_mode">
-                                <i class="fas fa-arrows-alt-h"></i> Range
-                            </label>
-                            
-                            <input type="radio" class="btn-check" name="input_mode" id="cidr_mode" value="cidr">
-                            <label class="btn btn-outline-secondary" for="cidr_mode">
-                                <i class="fas fa-network-wired"></i> CIDR
-                            </label>
-                            
-                            <input type="radio" class="btn-check" name="input_mode" id="list_mode" value="list">
-                            <label class="btn btn-outline-secondary" for="list_mode">
-                                <i class="fas fa-list"></i> IP List
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <!-- Range Mode Fields -->
-                    <div id="range_fields">
-                        <div class="mb-3">
-                            <label for="start_ip" class="form-label">Start IP</label>
-                            <input type="text" class="form-control" id="start_ip" name="start_ip" placeholder="e.g., 10.0.0.1">
-                        </div>
-                        <div class="mb-3">
-                            <label for="end_ip" class="form-label">End IP</label>
-                            <input type="text" class="form-control" id="end_ip" name="end_ip" placeholder="e.g., 10.0.0.255">
-                        </div>
-                    </div>
-                    
-                    <!-- CIDR Mode Fields -->
-                    <div id="cidr_fields" style="display: none;">
-                        <div class="mb-3">
-                            <label for="cidr" class="form-label">CIDR Notation</label>
-                            <input type="text" class="form-control" id="cidr" name="cidr" placeholder="e.g., 192.168.1.0/24">
-                            <div class="form-text">
-                                Examples: <code>10.0.0.0/8</code>, <code>192.168.1.0/24</code>, <code>172.16.0.0/16</code>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- IP List Mode Fields -->
-                    <div id="list_fields" style="display: none;">
-                        <div class="mb-3">
-                            <label for="ip_list" class="form-label">IP Address List</label>
-                            <textarea class="form-control" id="ip_list" name="ip_list" rows="5" 
-                                      placeholder="Enter individual IPs and ranges (space, comma, or line separated):&#10;10.12.2.2 10.90.10.100 10.23.211.10&#10;192.168.1.1, 172.16.0.50&#10;10.10.10.10-10.10.10.20&#10;10.0.0.1 10.5.5.1-10.5.5.5"></textarea>
-                            <div class="form-text">
-                                <strong>Supported formats:</strong><br>
-                                • Individual IPs: <code>10.12.2.2 10.90.10.100</code><br>
-                                • IP ranges: <code>10.10.10.10-10.10.10.20</code> (expands to individual IPs)<br>
-                                • Mixed: <code>192.168.1.1, 10.5.5.1-10.5.5.5, 172.16.0.1</code><br>
-                                <small class="text-info"><i class="fas fa-info-circle"></i> Ranges are expanded into individual IPs (max 1000 per range)</small>
-                            </div>
+                        <label for="ip_input" class="form-label">IP Addresses, Ranges & CIDR Blocks</label>
+                        <textarea class="form-control" id="ip_input" name="ip_input" rows="6" required
+                                  placeholder="Enter any combination (space, comma, or line separated):&#10;&#10;Single IPs: 192.168.1.1, 10.0.0.1&#10;IP ranges: 192.168.1.1-192.168.1.50&#10;CIDR blocks: 10.10.10.0/24, 10.10.20.0/24&#10;Mixed: 192.168.1.1, 10.10.10.0/24, 172.16.1.1-172.16.1.10"></textarea>
+                        <div class="form-text">
+                            <strong>All formats supported:</strong><br>
+                            • <strong>Single IPs:</strong> <code>192.168.1.1, 10.0.0.1</code> (stored individually)<br>
+                            • <strong>IP ranges:</strong> <code>192.168.1.1-192.168.1.50</code> (stored as efficient ranges)<br>
+                            • <strong>CIDR blocks:</strong> <code>10.10.10.0/24, 10.10.20.0/24</code> (stored as efficient ranges)<br>
+                            • <strong>Mixed formats:</strong> <code>192.168.1.1, 10.10.10.0/24, 172.16.1.1-172.16.1.10</code><br>
+                            <small class="text-info"><i class="fas fa-info-circle"></i> Ranges and CIDR blocks are stored efficiently as compressed ranges. Individual IPs are stored separately.</small>
                         </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="team_name" class="form-label">Team Name</label>
-                        <input type="text" class="form-control" id="team_name" name="team_name" placeholder="e.g., Network Security" required>
+                        <input type="text" class="form-control" id="team_name" name="team_name" placeholder="e.g., Network Security Team" required>
                     </div>
                     
-                    <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> <span id="submit_button_text">Add IP Range</span></button>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Add IP Mappings</button>
                 </form>
                 
                 <script>
-                    // Toggle between range, CIDR, and IP list input modes
-                    function showInputMode(mode) {
-                        // Hide all field groups
-                        document.getElementById('range_fields').style.display = 'none';
-                        document.getElementById('cidr_fields').style.display = 'none';
-                        document.getElementById('list_fields').style.display = 'none';
-                        
-                        // Remove all required attributes
-                        document.getElementById('start_ip').removeAttribute('required');
-                        document.getElementById('end_ip').removeAttribute('required');
-                        document.getElementById('cidr').removeAttribute('required');
-                        document.getElementById('ip_list').removeAttribute('required');
-                        
-                        // Show appropriate fields and set required attributes
-                        if (mode === 'range') {
-                            document.getElementById('range_fields').style.display = 'block';
-                            document.getElementById('start_ip').setAttribute('required', '');
-                            document.getElementById('end_ip').setAttribute('required', '');
-                            document.getElementById('submit_button_text').textContent = 'Add IP Range';
-                        } else if (mode === 'cidr') {
-                            document.getElementById('cidr_fields').style.display = 'block';
-                            document.getElementById('cidr').setAttribute('required', '');
-                            document.getElementById('submit_button_text').textContent = 'Add CIDR Range';
-                        } else if (mode === 'list') {
-                            document.getElementById('list_fields').style.display = 'block';
-                            document.getElementById('ip_list').setAttribute('required', '');
-                            document.getElementById('submit_button_text').textContent = 'Add IP List';
-                        }
-                    }
-                    
-                    document.getElementById('range_mode').addEventListener('change', function() {
-                        if (this.checked) showInputMode('range');
-                    });
-                    
-                    document.getElementById('cidr_mode').addEventListener('change', function() {
-                        if (this.checked) showInputMode('cidr');
-                    });
-                    
-                    document.getElementById('list_mode').addEventListener('change', function() {
-                        if (this.checked) showInputMode('list');
-                    });
-                    
                     // Inline editing functionality for IP ranges
                     document.addEventListener('DOMContentLoaded', function() {
                         // Edit button click handler

@@ -35,7 +35,7 @@ include 'includes/header.php';
 <div class="row mb-4">
     <div class="col-md-12">
         <h1><i class="fas fa-network-wired"></i> IP to Team Mapping</h1>
-        <p class="text-muted">Enter IP addresses, ranges, or CIDR notation (space, comma, or line separated) to find associated teams</p>
+        <p class="text-muted">Enter any combination of IPs, ranges, or CIDR blocks (space, comma, or line separated) to find associated teams</p>
     </div>
 </div>
 
@@ -56,14 +56,15 @@ include 'includes/header.php';
                 <form method="POST">
                     <div class="mb-3">
                         <label for="ip_address" class="form-label">IP Addresses</label>
-                        <textarea name="ip_address" id="ip_address" class="form-control" rows="4" 
-                                  placeholder="Enter IPs (space, comma, or line separated):&#10;192.168.1.1 10.0.0.0/8 172.16.0.1-172.16.0.100&#10;192.168.1.1, 10.23.211.10&#10;192.168.1.0/24"><?php echo htmlspecialchars($ipInput); ?></textarea>
+                        <textarea name="ip_address" id="ip_address" class="form-control" rows="5" 
+                                  placeholder="Enter any combination (space, comma, or line separated):&#10;&#10;Single IPs: 192.168.1.1, 10.0.0.1&#10;IP ranges: 192.168.1.1-192.168.1.50&#10;CIDR blocks: 10.10.10.0/24, 10.10.20.0/24&#10;Mixed: 192.168.1.1, 10.10.10.0/24, 172.16.1.1-172.16.1.10"><?php echo htmlspecialchars($ipInput); ?></textarea>
                         <div class="form-text">
-                            <strong>Supported formats:</strong><br>
-                            • Single IPs: <code>192.168.1.1</code><br>
-                            • CIDR notation: <code>192.168.1.0/24</code><br>
-                            • IP ranges: <code>192.168.1.1-192.168.1.50</code><br>
-                            • Multiple entries separated by spaces, commas, or new lines
+                            <strong>All formats supported:</strong><br>
+                            • <strong>Single IPs:</strong> <code>192.168.1.1, 10.0.0.1</code><br>
+                            • <strong>IP ranges:</strong> <code>192.168.1.1-192.168.1.50</code> (efficient range storage)<br>
+                            • <strong>CIDR blocks:</strong> <code>10.10.10.0/24, 10.10.20.0/24</code> (efficient range storage)<br>
+                            • <strong>Mixed formats:</strong> <code>192.168.1.1, 10.10.10.0/24, 172.16.1.1-172.16.1.10</code><br>
+                            <small class="text-info"><i class="fas fa-info-circle"></i> All formats work together. Ranges and CIDR blocks are stored as optimized ranges for better performance.</small>
                         </div>
                     </div>
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
@@ -85,10 +86,10 @@ include 'includes/header.php';
                 <h6>Input Examples:</h6>
                 <ul class="small">
                     <li><code>192.168.1.1</code> - Single IP</li>
-                    <li><code>192.168.1.0/24</code> - CIDR block</li>
+                    <li><code>10.10.10.0/24, 10.10.20.0/24</code> - Multiple CIDR blocks</li>
                     <li><code>10.0.0.1-10.0.0.50</code> - IP range</li>
-                    <li><code>10.12.2.2 10.90.10.100 10.23.211.10</code> - Space-separated list</li>
-                    <li>Mix multiple formats with spaces, commas, or new lines</li>
+                    <li><code>192.168.1.1, 10.10.10.0/24, 172.16.1.1-172.16.1.10</code> - Mixed formats</li>
+                    <li>All formats work together in any combination!</li>
                 </ul>
                 
                 <hr>

@@ -482,30 +482,50 @@ function addIpListToTeam($pdo, $ipList, $teamName) {
     $added = 0;
     $errors = [];
     $validIps = [];
+    $rangeCount = 0;
     
-    // Process each entry and collect individual IPs
+    // Process each entry 
     foreach ($entries as $entry) {
         if ($entry['type'] === 'invalid') {
             $errors[] = "Invalid: " . $entry['original'] . " - " . $entry['error'];
         } elseif ($entry['type'] === 'single') {
+            // Individual IPs go to validIps array for individual storage
             $validIps[] = $entry['start_ip'];
         } elseif ($entry['type'] === 'range') {
-            // Expand IP range into individual IPs
-            $expandedIps = expandIpRange($entry['start_ip'], $entry['end_ip']);
-            if (empty($expandedIps)) {
-                $errors[] = "Skipped: " . $entry['original'] . " - Range too large (max 1000 IPs) or invalid";
+            // Store IP ranges as compressed ranges (not expanded individual IPs)
+            if (addIpRange($pdo, $entry['start_ip'], $entry['end_ip'], $teamName)) {
+                $added++;
+                $rangeCount++;
             } else {
-                $validIps = array_merge($validIps, $expandedIps);
+                $errors[] = "Failed to add IP range: " . $entry['original'];
+            }
+        } elseif ($entry['type'] === 'cidr') {
+            // Add CIDR block as a single range entry
+            if (addIpRange($pdo, $entry['start_ip'], $entry['end_ip'], $teamName)) {
+                $added++;
+                $rangeCount++;
+            } else {
+                $errors[] = "Failed to add CIDR range: " . $entry['original'];
             }
         } else {
-            $errors[] = "Skipped: " . $entry['original'] . " - CIDR blocks not supported in list mode, use individual IPs or IP ranges";
+            $errors[] = "Skipped: " . $entry['original'] . " - Unsupported entry type";
         }
     }
     
-    // Remove duplicates
+    // Remove duplicates from individual IPs
     $validIps = array_unique($validIps);
     
-    if (empty($validIps)) {
+    // Add each individual IP as its own single-IP range
+    foreach ($validIps as $ip) {
+        if (addIpRange($pdo, $ip, $ip, $teamName)) {
+            $added++;
+        } else {
+            $errors[] = "Failed to add individual IP: " . $ip;
+        }
+    }
+    
+    // Check if we have any results
+    if ($added === 0) {
         return [
             'success' => false,
             'added' => 0,
@@ -513,20 +533,12 @@ function addIpListToTeam($pdo, $ipList, $teamName) {
         ];
     }
     
-    // Add each valid IP as its own range
-    foreach ($validIps as $ip) {
-        if (addIpRange($pdo, $ip, $ip, $teamName)) {
-            $added++;
-        } else {
-            $errors[] = "Failed to add: " . $ip;
-        }
-    }
-    
     return [
         'success' => $added > 0,
         'added' => $added,
         'errors' => $errors,
-        'total_valid' => count($validIps)
+        'total_ranges_and_cidrs' => $rangeCount,
+        'total_individual_ips' => count($validIps)
     ];
 }
 ?>
